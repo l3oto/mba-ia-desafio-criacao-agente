@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,10 +128,18 @@ def areas() -> list[Area]:
         return [Area(**dict(r)) for r in con.execute("SELECT id, nome, taxa FROM areas ORDER BY nome")]
 
 
-def area(area_id: str) -> Area | None:
-    with conexao() as con:
-        linha = con.execute("SELECT id, nome, taxa FROM areas WHERE id = ?", (area_id,)).fetchone()
-    return Area(**dict(linha)) if linha else None
+def area(identificacao: str) -> Area | None:
+    """Acha a área pelo id ou pelo nome, sem diferenciar acento e maiúsculas."""
+    procurada = _simplificar(identificacao)
+    for candidata in areas():
+        if procurada in (_simplificar(candidata.id), _simplificar(candidata.nome)):
+            return candidata
+    return None
+
+
+def _simplificar(texto: str) -> str:
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", sem_acento.lower()).strip("-")
 
 
 def apartamento_existe(numero: str) -> bool:
