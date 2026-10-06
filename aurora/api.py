@@ -79,8 +79,20 @@ async def _sessao(session_id: str) -> Session:
     return sessao
 
 
+def _ultima_mensagem_do_morador(sessao: Session) -> int:
+    for posicao in range(len(sessao.events) - 1, -1, -1):
+        evento = sessao.events[posicao]
+        if evento.author == "user" and evento.content and any(parte.text for parte in evento.content.parts or []):
+            return posicao
+    return 0
+
+
 def confirmacoes_pendentes(sessao: Session) -> list[dict[str, Any]]:
-    """Pedidos de confirmação da sessão que ainda não receberam resposta."""
+    """Pedidos de confirmação ainda sem resposta, feitos depois da última mensagem do morador.
+
+    Uma mensagem nova do morador encerra os pedidos anteriores: eles deixam de
+    ser pendentes e a rota de confirmações passa a recusá-los com 409.
+    """
     respondidas = {
         resposta.id
         for evento in sessao.events
@@ -88,14 +100,14 @@ def confirmacoes_pendentes(sessao: Session) -> list[dict[str, Any]]:
         if resposta.name == PEDIDO_DE_CONFIRMACAO
     }
     pendentes = []
-    for evento in sessao.events:
+    for evento in sessao.events[_ultima_mensagem_do_morador(sessao):]:
         for chamada in evento.get_function_calls():
             if chamada.name != PEDIDO_DE_CONFIRMACAO or chamada.id in respondidas:
                 continue
             original = (chamada.args or {}).get("originalFunctionCall") or {}
             detalhes = dict(original.get("args") or {})
             if original.get("name") == "reservar_area" and (area := banco.area(detalhes.get("area", ""))):
-                detalhes["taxa"] = area.taxa
+                detalhes.update(area=area.id, nome_da_area=area.nome, taxa=area.taxa)
             pendentes.append({"id": chamada.id, "acao": original.get("name"), "detalhes": detalhes})
     return pendentes
 
