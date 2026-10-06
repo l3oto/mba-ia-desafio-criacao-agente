@@ -42,12 +42,13 @@ def minhas_reservas(tool_context: ToolContext) -> dict:
 
 
 def consultar_disponibilidade(area: str, data: str) -> dict:
-    """Diz se uma área está livre em uma data (AAAA-MM-DD). Não revela de quem é a reserva."""
-    if banco.area(area) is None:
+    """Diz se uma área (id ou nome) está livre em uma data (AAAA-MM-DD). Não revela de quem é a reserva."""
+    encontrada = banco.area(area)
+    if encontrada is None:
         return {"status": "erro", "mensagem": f"Area desconhecida: {area}. Consulte listar_areas."}
     if not _data_valida(data):
         return _erro_de_data(data)
-    return {"area": area, "data": data, "livre": banco.data_livre(area, data)}
+    return {"area": encontrada.id, "data": data, "livre": banco.data_livre(encontrada.id, data)}
 
 
 def _gera_cobranca(area: str, data: str, tool_context: ToolContext) -> bool:
@@ -56,7 +57,7 @@ def _gera_cobranca(area: str, data: str, tool_context: ToolContext) -> bool:
 
 
 def reservar_area(area: str, data: str, tool_context: ToolContext) -> dict:
-    """Reserva uma área comum para o apartamento do morador na data (AAAA-MM-DD).
+    """Reserva uma área comum (id ou nome) para o apartamento do morador na data (AAAA-MM-DD).
 
     Áreas com taxa geram cobrança e só são reservadas depois que o morador
     aprova a confirmação enviada pelo sistema.
@@ -74,23 +75,26 @@ def reservar_area(area: str, data: str, tool_context: ToolContext) -> dict:
         return {"status": "erro", "mensagem": "Reserva com cobranca exige confirmacao do morador."}
 
     try:
-        codigo = banco.reservar(_apartamento(tool_context), area, data)
+        codigo = banco.reservar(_apartamento(tool_context), encontrada.id, data)
     except banco.DataOcupada:
         return {"status": "indisponivel", "mensagem": f"{encontrada.nome} ja esta reservado em {data}."}
-    resultado = {"status": "reservado", "codigo": codigo, "area": area, "data": data}
+    resultado = {"status": "reservado", "codigo": codigo, "area": encontrada.id, "data": data}
     if encontrada.taxa > 0:
         resultado["cobranca"] = encontrada.taxa
     return resultado
 
 
 def cancelar_reserva(area: str, data: str, tool_context: ToolContext) -> dict:
-    """Cancela a reserva do apartamento do morador para a área na data (AAAA-MM-DD)."""
+    """Cancela a reserva do apartamento do morador para a área (id ou nome) na data (AAAA-MM-DD)."""
+    encontrada = banco.area(area)
+    if encontrada is None:
+        return {"status": "erro", "mensagem": f"Area desconhecida: {area}. Consulte listar_areas."}
     if not _data_valida(data):
         return _erro_de_data(data)
-    codigo = banco.cancelar(_apartamento(tool_context), area, data)
+    codigo = banco.cancelar(_apartamento(tool_context), encontrada.id, data)
     if codigo is None:
         return {"status": "nao_encontrada", "mensagem": "O seu apartamento nao tem reserva ativa dessa area nessa data."}
-    return {"status": "cancelada", "codigo": codigo, "area": area, "data": data}
+    return {"status": "cancelada", "codigo": codigo, "area": encontrada.id, "data": data}
 
 
 def meus_visitantes(tool_context: ToolContext) -> dict:
@@ -123,6 +127,19 @@ def consultar_regulamento(assunto: str) -> dict:
     Devolve só artigos do capítulo mais relacionado ao assunto.
     """
     return regulamento.consultar(assunto)
+
+
+RECUSA_DO_ADK = {"error": "This tool call is rejected."}
+
+
+def explicar_recusa(tool, args: dict, tool_context: ToolContext, tool_response: dict) -> dict | None:
+    """Troca a recusa genérica do ADK por uma resposta que o modelo não confunda com falha."""
+    if tool_response == RECUSA_DO_ADK:
+        return {
+            "status": "recusado_pelo_morador",
+            "mensagem": "O morador recusou a confirmacao e nada foi feito. Nao chame a tool de novo.",
+        }
+    return None
 
 
 ferramentas_de_reservas = [
