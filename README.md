@@ -105,6 +105,7 @@ Pré-requisitos: Python 3.12 ou superior, [uv](https://docs.astral.sh/uv/) e uma
 [Google AI Studio](https://aistudio.google.com/apikey).
 
 ```bash
+git clone https://github.com/l3oto/mba-ia-desafio-criacao-agente.git && cd mba-ia-desafio-criacao-agente
 cp .env.example .env      # preencha GOOGLE_API_KEY
 uv sync
 ```
